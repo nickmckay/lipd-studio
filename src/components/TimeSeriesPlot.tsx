@@ -1,7 +1,11 @@
-import Plot from 'react-plotly.js'
+// @ts-expect-error no types for dist bundle
+import Plotly from 'plotly.js-dist-min'
+import createPlotlyComponent from 'react-plotly.js/factory'
 import type { LipdMetadata } from '../types/lipd'
 import { getColumns } from '../lib/lipd'
 import { useMemo, useRef, useState, useEffect } from 'react'
+
+const Plot = createPlotlyComponent(Plotly)
 
 interface Props {
   metadata: LipdMetadata
@@ -17,7 +21,7 @@ export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
     if (!containerRef.current) return
     const ro = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect
-      setSize({ width, height })
+      if (width > 0 && height > 0) setSize({ width, height })
     })
     ro.observe(containerRef.current)
     return () => ro.disconnect()
@@ -57,7 +61,7 @@ export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
   if (!xVals || !yVals || xVals.length === 0) {
     return (
       <div className="panel plot-panel empty">
-        <p>No data values found for this variable.</p>
+        <p>No data values found — CSV may not have loaded for this table.</p>
       </div>
     )
   }
@@ -88,7 +92,7 @@ export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
           plot_bgcolor: '#1a1a2e',
           font: { color: '#e0e0f0', size: 12 },
         }}
-        config={{ displayModeBar: true, displaylogo: false, responsive: false }}
+        config={{ displayModeBar: true, displaylogo: false }}
       />
     </div>
   )

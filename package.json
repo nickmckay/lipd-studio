@@ -16,6 +16,7 @@
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "plotly.js": "^3.4.0",
+    "plotly.js-dist-min": "^2.35.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-leaflet": "^5.0.0",
