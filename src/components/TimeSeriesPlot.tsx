@@ -1,11 +1,6 @@
-// @ts-expect-error no types for dist bundle
-import Plotly from 'plotly.js-dist-min'
-import createPlotlyComponent from 'react-plotly.js/factory'
 import type { LipdMetadata } from '../types/lipd'
 import { getColumns } from '../lib/lipd'
-import { useMemo, useRef, useState, useEffect } from 'react'
-
-const Plot = createPlotlyComponent(Plotly)
+import { useMemo, useRef, useEffect } from 'react'
 
 interface Props {
   metadata: LipdMetadata
@@ -14,18 +9,7 @@ interface Props {
 
 export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
   const columns = useMemo(() => getColumns(metadata), [metadata])
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [size, setSize] = useState({ width: 600, height: 400 })
-
-  useEffect(() => {
-    if (!containerRef.current) return
-    const ro = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect
-      if (width > 0 && height > 0) setSize({ width, height })
-    })
-    ro.observe(containerRef.current)
-    return () => ro.disconnect()
-  }, [])
+  const divRef = useRef<HTMLDivElement>(null)
 
   const { ageCol, dataCol } = useMemo(() => {
     if (!selectedTSid) return { ageCol: null, dataCol: null }
@@ -47,6 +31,49 @@ export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
     return { ageCol, dataCol }
   }, [selectedTSid, columns])
 
+  useEffect(() => {
+    if (!divRef.current) return
+    if (!ageCol?.values?.length || !dataCol?.values?.length) return
+
+    const xLabel = `${ageCol.variableName}${ageCol.units ? ` (${ageCol.units})` : ''}`
+    const yLabel = `${dataCol.variableName}${dataCol.units ? ` (${dataCol.units})` : ''}`
+
+    // Dynamic import so Plotly doesn't block initial page render
+    import('plotly.js-dist-min').then((mod) => {
+      const Plotly = mod.default ?? mod
+      if (!divRef.current) return
+
+      Plotly.react(divRef.current, [{
+        x: ageCol.values,
+        y: dataCol.values,
+        type: 'scatter',
+        mode: 'lines+markers',
+        marker: { size: 4, color: '#4a90d9' },
+        line: { color: '#4a90d9', width: 1.5 },
+        name: dataCol.variableName,
+        connectgaps: false,
+      }], {
+        autosize: true,
+        margin: { l: 70, r: 20, t: 30, b: 60 },
+        xaxis: { title: { text: xLabel }, autorange: true, gridcolor: '#2d2d4e', color: '#e0e0f0' },
+        yaxis: { title: { text: yLabel }, gridcolor: '#2d2d4e', color: '#e0e0f0' },
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: '#1a1a2e',
+        font: { color: '#e0e0f0', size: 12 },
+      }, {
+        displaylogo: false,
+        responsive: true,
+      })
+    })
+
+    return () => {
+      import('plotly.js-dist-min').then((mod) => {
+        const Plotly = mod.default ?? mod
+        if (divRef.current) Plotly.purge(divRef.current)
+      })
+    }
+  }, [ageCol, dataCol])
+
   if (!dataCol || !ageCol) {
     return (
       <div className="panel plot-panel empty">
@@ -55,10 +82,7 @@ export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
     )
   }
 
-  const xVals = ageCol.values
-  const yVals = dataCol.values
-
-  if (!xVals || !yVals || xVals.length === 0) {
+  if (!ageCol.values?.length || !dataCol.values?.length) {
     return (
       <div className="panel plot-panel empty">
         <p>No data values found — CSV may not have loaded for this table.</p>
@@ -66,34 +90,5 @@ export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
     )
   }
 
-  const xLabel = `${ageCol.variableName}${ageCol.units ? ` (${ageCol.units})` : ''}`
-  const yLabel = `${dataCol.variableName}${dataCol.units ? ` (${dataCol.units})` : ''}`
-
-  return (
-    <div ref={containerRef} className="panel plot-panel">
-      <Plot
-        data={[{
-          x: xVals as number[],
-          y: yVals as number[],
-          type: 'scatter',
-          mode: 'lines+markers',
-          marker: { size: 4, color: '#4a90d9' },
-          line: { color: '#4a90d9', width: 1.5 },
-          name: dataCol.variableName,
-          connectgaps: false,
-        }]}
-        layout={{
-          width: size.width,
-          height: size.height,
-          margin: { l: 70, r: 20, t: 30, b: 60 },
-          xaxis: { title: { text: xLabel }, autorange: true, gridcolor: '#2d2d4e', color: '#e0e0f0' },
-          yaxis: { title: { text: yLabel }, gridcolor: '#2d2d4e', color: '#e0e0f0' },
-          paper_bgcolor: 'transparent',
-          plot_bgcolor: '#1a1a2e',
-          font: { color: '#e0e0f0', size: 12 },
-        }}
-        config={{ displayModeBar: true, displaylogo: false }}
-      />
-    </div>
-  )
+  return <div ref={divRef} className="panel plot-panel" />
 }
