@@ -1,7 +1,7 @@
 import Plot from 'react-plotly.js'
 import type { LipdMetadata } from '../types/lipd'
 import { getColumns } from '../lib/lipd'
-import { useMemo } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 
 interface Props {
   metadata: LipdMetadata
@@ -9,24 +9,36 @@ interface Props {
 }
 
 export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
-  const columns = getColumns(metadata)
+  const columns = useMemo(() => getColumns(metadata), [metadata])
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ width: 600, height: 400 })
 
-  // Find the age/year column in the same table as the selected column
+  useEffect(() => {
+    if (!containerRef.current) return
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      setSize({ width, height })
+    })
+    ro.observe(containerRef.current)
+    return () => ro.disconnect()
+  }, [])
+
   const { ageCol, dataCol } = useMemo(() => {
     if (!selectedTSid) return { ageCol: null, dataCol: null }
 
     const entry = columns.find(c => c.col.TSid === selectedTSid)
     if (!entry) return { ageCol: null, dataCol: null }
 
-    // Find all columns in the same table
     const tableCols = columns.filter(c => c.path === entry.path)
     const dataCol = entry.col
 
-    // Prefer year/age column in same table
-    const ageCol = tableCols.find(c =>
-      ['year', 'age', 'age-yrad', 'yearad'].includes(c.col.variableName.toLowerCase())
-        && c.col.TSid !== selectedTSid
-    )?.col ?? tableCols.find(c => c.col.TSid !== selectedTSid)?.col ?? null
+    const ageCol =
+      tableCols.find(c =>
+        ['year', 'age', 'age-yrad', 'yearad'].includes(c.col.variableName.toLowerCase()) &&
+        c.col.TSid !== selectedTSid
+      )?.col ??
+      tableCols.find(c => c.col.TSid !== selectedTSid)?.col ??
+      null
 
     return { ageCol, dataCol }
   }, [selectedTSid, columns])
@@ -39,38 +51,44 @@ export function TimeSeriesPlot({ metadata, selectedTSid }: Props) {
     )
   }
 
-  const x = ageCol.values as number[]
-  const y = dataCol.values as number[]
+  const xVals = ageCol.values
+  const yVals = dataCol.values
+
+  if (!xVals || !yVals || xVals.length === 0) {
+    return (
+      <div className="panel plot-panel empty">
+        <p>No data values found for this variable.</p>
+      </div>
+    )
+  }
 
   const xLabel = `${ageCol.variableName}${ageCol.units ? ` (${ageCol.units})` : ''}`
   const yLabel = `${dataCol.variableName}${dataCol.units ? ` (${dataCol.units})` : ''}`
 
   return (
-    <div className="panel plot-panel">
+    <div ref={containerRef} className="panel plot-panel">
       <Plot
         data={[{
-          x,
-          y,
+          x: xVals as number[],
+          y: yVals as number[],
           type: 'scatter',
           mode: 'lines+markers',
           marker: { size: 4, color: '#4a90d9' },
           line: { color: '#4a90d9', width: 1.5 },
           name: dataCol.variableName,
+          connectgaps: false,
         }]}
         layout={{
-          autosize: true,
-          margin: { l: 60, r: 20, t: 30, b: 60 },
-          xaxis: { title: xLabel, autorange: true },
-          yaxis: { title: yLabel },
+          width: size.width,
+          height: size.height,
+          margin: { l: 70, r: 20, t: 30, b: 60 },
+          xaxis: { title: { text: xLabel }, autorange: true, gridcolor: '#2d2d4e', color: '#e0e0f0' },
+          yaxis: { title: { text: yLabel }, gridcolor: '#2d2d4e', color: '#e0e0f0' },
           paper_bgcolor: 'transparent',
           plot_bgcolor: '#1a1a2e',
-          font: { color: '#e0e0e0' },
-          xaxis_gridcolor: '#333',
-          yaxis_gridcolor: '#333',
-        } as object}
-        useResizeHandler
-        style={{ width: '100%', height: '100%' }}
-        config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+          font: { color: '#e0e0f0', size: 12 },
+        }}
+        config={{ displayModeBar: true, displaylogo: false, responsive: false }}
       />
     </div>
   )
