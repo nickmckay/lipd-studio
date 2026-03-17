@@ -6,9 +6,10 @@ interface Props {
   metadata: LipdMetadata
   selectedTSid: string | null
   onSelect: (tsid: string) => void
+  className?: string
 }
 
-export function ColumnList({ metadata, selectedTSid, onSelect }: Props) {
+export function ColumnList({ metadata, selectedTSid, onSelect, className = '' }: Props) {
   const columns = useMemo(() => getColumns(metadata), [metadata])
 
   // Group by path
@@ -23,7 +24,7 @@ export function ColumnList({ metadata, selectedTSid, onSelect }: Props) {
   }, [columns])
 
   return (
-    <div className="panel column-list">
+    <div className={`panel column-list${className ? ' ' + className : ''}`}>
       <h2>Variables</h2>
       {[...groups.entries()].map(([path, cols]) => (
         <div key={path} className="col-group">

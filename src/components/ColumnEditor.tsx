@@ -1,5 +1,24 @@
+import { useState } from 'react'
 import type { LipdMetadata, LipdColumn } from '../types/lipd'
 import { VARIABLE_NAMES, UNITS, PROXY_TYPES, PROXY_GENERAL, INTERP_VARIABLES, SEASONALITY } from '../lib/vocabulary'
+
+// Fields with dedicated UI — excluded from the "extra fields" display
+const STANDARD_COL_FIELDS = new Set([
+  'number', 'variableName', 'TSid', 'units', 'description', 'proxy', 'proxyGeneral',
+  'values', 'interpretation', '_synthetic', '_origNumber',
+])
+
+// Standard interpretation fields with dedicated UI
+const STANDARD_INTERP_FIELDS = new Set([
+  'variable', 'variableDetail', 'seasonality', 'direction', 'scope', 'basis',
+])
+
+// Suggested field names for the add-field datalist
+const SUGGESTED_COL_FIELDS = [
+  'calibration', 'uncertainty', 'inferredFrom', 'notes',
+  'takenAtDepth', 'measurementMaterial', 'measurementTechnique',
+  'hasMinValue', 'hasMaxValue', 'hasMeanValue', 'hasMedianValue', 'hasResolution',
+]
 
 interface Props {
   metadata: LipdMetadata
@@ -10,7 +29,6 @@ interface Props {
 // Helper: deep clone and update a column by TSid
 function updateColumn(metadata: LipdMetadata, tsid: string, updater: (col: LipdColumn) => LipdColumn): LipdMetadata {
   const clone = JSON.parse(JSON.stringify(metadata)) as LipdMetadata
-  // Preserve values (not in JSON)
   const sections = [...(metadata.paleoData ?? []), ...(metadata.chronData ?? [])]
   const cloneSections = [...(clone.paleoData ?? []), ...(clone.chronData ?? [])]
   sections.forEach((sec, si) => {
@@ -18,7 +36,6 @@ function updateColumn(metadata: LipdMetadata, tsid: string, updater: (col: LipdC
       tbl.columns.forEach((col, ci) => {
         if (col.TSid === tsid) {
           cloneSections[si].measurementTable![ti].columns[ci] = updater(JSON.parse(JSON.stringify(col)))
-          // Re-attach values since they were stripped by JSON clone of original
           cloneSections[si].measurementTable![ti].columns[ci].values = col.values
         }
       })
@@ -40,6 +57,8 @@ function findColumn(metadata: LipdMetadata, tsid: string): LipdColumn | null {
 }
 
 export function ColumnEditor({ metadata, selectedTSid, onChange }: Props) {
+  const [newFieldName, setNewFieldName] = useState('')
+
   if (!selectedTSid) {
     return <div className="panel column-editor empty"><p>Select a variable to edit its metadata.</p></div>
   }
@@ -51,14 +70,46 @@ export function ColumnEditor({ metadata, selectedTSid, onChange }: Props) {
     onChange(updateColumn(metadata, selectedTSid, c => ({ ...c, [key]: value })))
   }
 
-  const interp = col.interpretation?.[0] ?? {}
-  const setInterp = (key: string, value: unknown) => {
+  const deleteField = (key: string) => {
     onChange(updateColumn(metadata, selectedTSid, c => {
-      const interps = c.interpretation ? [...c.interpretation] : [{}]
-      interps[0] = { ...interps[0], [key]: value }
+      const next = { ...c }
+      delete next[key]
+      return next
+    }))
+  }
+
+  const setInterp = (idx: number, key: string, value: unknown) => {
+    onChange(updateColumn(metadata, selectedTSid, c => {
+      const interps = [...(c.interpretation ?? [])]
+      interps[idx] = { ...interps[idx], [key]: value }
       return { ...c, interpretation: interps }
     }))
   }
+
+  const addInterp = () => {
+    onChange(updateColumn(metadata, selectedTSid, c => ({
+      ...c,
+      interpretation: [...(c.interpretation ?? []), {}],
+    })))
+  }
+
+  const removeInterp = (idx: number) => {
+    onChange(updateColumn(metadata, selectedTSid, c => {
+      const interps = [...(c.interpretation ?? [])]
+      interps.splice(idx, 1)
+      return { ...c, interpretation: interps.length ? interps : undefined }
+    }))
+  }
+
+  const addField = () => {
+    const key = newFieldName.trim()
+    if (!key || STANDARD_COL_FIELDS.has(key)) return
+    set(key, '')
+    setNewFieldName('')
+  }
+
+  const interpretations = (col.interpretation ?? []) as Array<Record<string, unknown>>
+  const extraFields = Object.entries(col).filter(([k]) => !STANDARD_COL_FIELDS.has(k))
 
   return (
     <div className="panel column-editor">
@@ -100,51 +151,113 @@ export function ColumnEditor({ metadata, selectedTSid, onChange }: Props) {
         </div>
       </section>
 
+      {interpretations.map((interp, idx) => (
+        <section key={idx} className="interp-section">
+          <div className="section-header-row">
+            <h3>Interpretation {interpretations.length > 1 ? idx + 1 : ''}</h3>
+            <button className="btn-remove-interp" onClick={() => removeInterp(idx)} title="Remove interpretation">×</button>
+          </div>
+
+          <div className="field">
+            <label>Variable</label>
+            <select value={(interp.variable ?? '') as string} onChange={e => setInterp(idx, 'variable', e.target.value)}>
+              <option value="">— none —</option>
+              {INTERP_VARIABLES.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+
+          <div className="field">
+            <label>Variable detail</label>
+            <input value={(interp.variableDetail ?? '') as string} onChange={e => setInterp(idx, 'variableDetail', e.target.value)} />
+          </div>
+
+          <div className="field">
+            <label>Seasonality</label>
+            <select value={(interp.seasonality ?? '') as string} onChange={e => setInterp(idx, 'seasonality', e.target.value)}>
+              <option value="">— none —</option>
+              {SEASONALITY.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+
+          <div className="field">
+            <label>Direction</label>
+            <select value={(interp.direction ?? '') as string} onChange={e => setInterp(idx, 'direction', e.target.value)}>
+              <option value="">— none —</option>
+              <option value="positive">positive</option>
+              <option value="negative">negative</option>
+            </select>
+          </div>
+
+          <div className="field">
+            <label>Scope</label>
+            <select value={(interp.scope ?? '') as string} onChange={e => setInterp(idx, 'scope', e.target.value)}>
+              <option value="">— none —</option>
+              <option value="climate">climate</option>
+              <option value="isotope">isotope</option>
+            </select>
+          </div>
+
+          <div className="field">
+            <label>Basis</label>
+            <input value={(interp.basis ?? '') as string} onChange={e => setInterp(idx, 'basis', e.target.value)} />
+          </div>
+
+          {/* Extra interpretation fields not in the standard set */}
+          {Object.entries(interp)
+            .filter(([k]) => !STANDARD_INTERP_FIELDS.has(k))
+            .map(([k, v]) => (
+              <div key={k} className="field field-extra">
+                <label>{k}</label>
+                <div className="field-extra-row">
+                  <input value={String(v ?? '')} onChange={e => setInterp(idx, k, e.target.value)} />
+                  <button className="btn-remove-field" onClick={() => {
+                    onChange(updateColumn(metadata, selectedTSid, c => {
+                      const interps = [...(c.interpretation ?? [])]
+                      const next = { ...interps[idx] }
+                      delete next[k]
+                      interps[idx] = next
+                      return { ...c, interpretation: interps }
+                    }))
+                  }} title={`Remove ${k}`}>×</button>
+                </div>
+              </div>
+            ))}
+        </section>
+      ))}
+
+      <button className="btn-add-interp" onClick={addInterp}>
+        + {interpretations.length === 0 ? 'Add interpretation' : 'Add interpretation'}
+      </button>
+
+      {extraFields.length > 0 && (
+        <section>
+          <h3>Extra fields</h3>
+          {extraFields.map(([k, v]) => (
+            <div key={k} className="field field-extra">
+              <label>{k}</label>
+              <div className="field-extra-row">
+                <input value={String(v ?? '')} onChange={e => set(k, e.target.value)} />
+                <button className="btn-remove-field" onClick={() => deleteField(k)} title={`Remove ${k}`}>×</button>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       <section>
-        <h3>Interpretation</h3>
-
-        <div className="field">
-          <label>Variable</label>
-          <select value={(interp.variable ?? '') as string} onChange={e => setInterp('variable', e.target.value)}>
-            <option value="">— none —</option>
-            {INTERP_VARIABLES.map(v => <option key={v} value={v}>{v}</option>)}
-          </select>
-        </div>
-
-        <div className="field">
-          <label>Variable detail</label>
-          <input value={(interp.variableDetail ?? '') as string} onChange={e => setInterp('variableDetail', e.target.value)} />
-        </div>
-
-        <div className="field">
-          <label>Seasonality</label>
-          <select value={(interp.seasonality ?? '') as string} onChange={e => setInterp('seasonality', e.target.value)}>
-            <option value="">— none —</option>
-            {SEASONALITY.map(v => <option key={v} value={v}>{v}</option>)}
-          </select>
-        </div>
-
-        <div className="field">
-          <label>Direction</label>
-          <select value={(interp.direction ?? '') as string} onChange={e => setInterp('direction', e.target.value)}>
-            <option value="">— none —</option>
-            <option value="positive">positive</option>
-            <option value="negative">negative</option>
-          </select>
-        </div>
-
-        <div className="field">
-          <label>Scope</label>
-          <select value={(interp.scope ?? '') as string} onChange={e => setInterp('scope', e.target.value)}>
-            <option value="">— none —</option>
-            <option value="climate">climate</option>
-            <option value="isotope">isotope</option>
-          </select>
-        </div>
-
-        <div className="field">
-          <label>Basis</label>
-          <input value={(interp.basis ?? '') as string} onChange={e => setInterp('basis', e.target.value)} />
+        <h3>Add field</h3>
+        <div className="add-field-row">
+          <input
+            list="col-fields-list"
+            placeholder="Field name…"
+            value={newFieldName}
+            onChange={e => setNewFieldName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addField()}
+          />
+          <datalist id="col-fields-list">
+            {SUGGESTED_COL_FIELDS.map(f => <option key={f} value={f} />)}
+          </datalist>
+          <button className="btn-add-field" onClick={addField}>Add</button>
         </div>
       </section>
     </div>
